@@ -57,7 +57,7 @@ def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
         name = f"@{user['username']}" if user and user["username"] else str(uid)
         for admin in cfg.admin_ids:
             try:
-                await bot.send_message(admin, f"💰 Оплата: {name} — {tariff.get('title', tariff_id)}, "
+                await bot.send_message(admin, f"💰 Оплата: {name} — {tariff.get('label') or tariff.get('title', tariff_id)}, "
                                               f"{order['amount']:.0f} ₽")
             except Exception:
                 pass
