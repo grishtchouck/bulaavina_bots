@@ -141,6 +141,7 @@ async def send_payment_link(msg: Message, u, tid: str, bot: Bot, db: DB, sc: Sce
         success_url=f"https://t.me/{me.username}",
         secret=cfg.prodamus_secret,
         sign_link=cfg.prodamus_sign_links,
+        paid_content=tariff.get("paid_content", ""),
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Перейти к оплате", url=link)]])
     await msg.answer(

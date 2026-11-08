@@ -86,6 +86,8 @@ class Scenario:
             cats_ok(f"tariffs.{tid}", t.get("grant"))
             if t.get("success_screen") and t["success_screen"] not in self.screens:
                 errors.append(f"tariffs.{tid}: экран «{t['success_screen']}» не найден")
+            if len(t.get("paid_content", "")) > 4096:
+                errors.append(f"tariffs.{tid}: paid_content длиннее 4096 символов")
             if len(f"p:{tid}".encode()) > 64:
                 errors.append(f"tariffs.{tid}: слишком длинный id")
         for cmd, c in self.commands.items():

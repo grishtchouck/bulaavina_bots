@@ -79,7 +79,8 @@ def _flatten(data, prefix="") -> list[tuple[str, str]]:
 
 
 def payment_link(*, base_url: str, order_id: str, user_id: int, title: str, price: float,
-                 notify_url: str, success_url: str, secret: str = "", sign_link: bool = False) -> str:
+                 notify_url: str, success_url: str, secret: str = "", sign_link: bool = False,
+                 paid_content: str = "") -> str:
     data = {
         "do": "pay",
         "order_id": order_id,
@@ -89,6 +90,8 @@ def payment_link(*, base_url: str, order_id: str, user_id: int, title: str, pric
         "urlSuccess": success_url,
         "urlReturn": success_url,
     }
+    if paid_content:  # «доступы к материалам» — обязательно для чека по требованиям ФНС
+        data["paid_content"] = paid_content
     if sign_link and secret:
         data["signature"] = sign(data, secret)
     return f"{base_url}/?{urlencode(_flatten(data))}"

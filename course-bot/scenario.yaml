@@ -31,6 +31,7 @@ tariffs:
     grant:
     - student
     success_screen: paid
+    paid_content: Покупка курса Как искусство
   test:
     title: Тест оплаты
     price: 10
@@ -38,6 +39,7 @@ tariffs:
     - student
     success_screen: paid
     admin_only: true
+    paid_content: Покупка курса Как искусство
 screens:
   welcome:
     photo: media/welcome.jpg
