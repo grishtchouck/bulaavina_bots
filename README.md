@@ -6,28 +6,27 @@ Telegram-боты. Каждый бот лежит в своей папке со 
 |---|---|---|---|---|
 | Курс по контенту | `course-bot/` | `course-bot` | 8080 | bot.bulaavina.ru |
 
-## Первичная настройка сервера (один раз)
+## Установка на новый сервер (Debian 12, зарубежная локация)
 
-```bash
-# подкачка 1 ГБ
-fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
-# пакеты
-apt update && apt install -y python3-venv git caddy
-```
-
-Доступ сервера к приватному репозиторию — deploy key (только чтение):
+**1. Доступ к репозиторию (deploy key, только чтение):**
 
 ```bash
 ssh-keygen -t ed25519 -N "" -f ~/.ssh/github_deploy
-cat ~/.ssh/github_deploy.pub   # → GitHub: Settings → Deploy keys → Add deploy key
-cat >> ~/.ssh/config <<'CFG'
-Host github.com
-  IdentityFile ~/.ssh/github_deploy
-  IdentitiesOnly yes
-CFG
+cat ~/.ssh/github_deploy.pub   # строку целиком → GitHub: Settings → Deploy keys → Add deploy key
+printf 'Host github.com\n  IdentityFile ~/.ssh/github_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+apt update && apt install -y git
 git clone git@github.com:grishtchouck/bulaavina_bots.git /opt/bulaavina_bots
 ```
+
+**2. Установка бота одной командой:**
+
+```bash
+bash /opt/bulaavina_bots/install.sh course-bot bot.bulaavina.ru 8080
+```
+
+Скрипт проверяет доступ к Telegram и сразу останавливается, если его нет. Дальше он настраивает подкачку, пакеты, venv, `.env`, systemd-сервис и Caddy с HTTPS, а также подсказывает, если DNS ещё не указывает на сервер. Скрипт можно запускать повторно.
+
+**3. Токен:** `nano /opt/bulaavina_bots/course-bot/.env` → `BOT_TOKEN`, `ADMIN_IDS` → `systemctl restart course-bot`.
 
 ## Обновление после изменений в репозитории
 
@@ -40,14 +39,8 @@ systemctl restart course-bot        # если менялся код
 ## Добавить нового бота
 
 1. Скопировать папку бота (например `course-bot/` → `new-bot/`), поправить сценарий.
-2. В `new-bot/new-bot.service` заменить `course-bot` на `new-bot`.
-3. На сервере: venv + `.env` с новым токеном и **другим** `WEB_PORT` (8081, 8082…).
-4. Добавить поддомен в DNS и строку в `/etc/caddy/Caddyfile`:
-   ```
-   bot.bulaavina.ru  { reverse_proxy 127.0.0.1:8080 }
-   bot2.bulaavina.ru { reverse_proxy 127.0.0.1:8081 }
-   ```
-   затем `systemctl reload caddy`.
+2. Добавить в DNS поддомен на IP сервера.
+3. На сервере: `git pull && bash install.sh new-bot bot2.bulaavina.ru 8081`. У каждого бота свой порт (8080, 8081…), сервис и Caddy скрипт настроит сам.
 
 ## Полезное
 

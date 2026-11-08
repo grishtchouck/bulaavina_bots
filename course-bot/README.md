@@ -24,17 +24,15 @@ python -m bot.main
 
 ## Продакшн (VPS)
 
-Сервер описан в корневом README репозитория. Коротко:
+Установка описана в корневом README репозитория. Коротко:
 
 ```bash
-cd /opt/bulaavina_bots/course-bot
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env && nano .env
-cp course-bot.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now course-bot
+bash /opt/bulaavina_bots/install.sh course-bot bot.bulaavina.ru 8080
+nano /opt/bulaavina_bots/course-bot/.env   # BOT_TOKEN, ADMIN_IDS
+systemctl restart course-bot
 ```
 
-Вебхук Prodamus: Caddy проксирует `https://bot.bulaavina.ru` на порт из `WEB_PORT` (по умолчанию 8080).
-Проверка: `https://bot.bulaavina.ru/health` → `ok`.
+Проверка вебхука: `https://bot.bulaavina.ru/health` → `ok`.
 
 ## Настройка Prodamus
 
