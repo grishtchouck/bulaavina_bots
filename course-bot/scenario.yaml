@@ -1,0 +1,131 @@
+# ============================================================
+#  СЦЕНАРИЙ БОТА
+#  Здесь все тексты, кнопки, категории, условия и тарифы.
+#  После правки: /reload в боте (от админа) — перезапуск не нужен.
+# ============================================================
+
+# Экран, который открывается по /start
+start_screen: welcome
+
+# Категории пользователей (ключ: описание). Описание видно в админке.
+categories:
+  lead: Зашёл в бота
+  src_insta: Пришёл из Instagram
+  src_tg: Пришёл из Telegram-канала
+  student_basic: Купил тариф «Базовый»
+  student_pro: Купил тариф «PRO»
+  waitlist: Записался в лист ожидания
+
+# Диплинки: t.me/<бот>?start=insta → пользователь получит категорию src_insta
+deep_links:
+  insta: [src_insta]
+  tg: [src_tg]
+
+# Тарифы для оплаты через Prodamus
+tariffs:
+  basic:
+    title: "Курс «Контент как искусство» — Базовый"
+    price: 9900            # рубли
+    grant: [student_basic] # какие категории выдать после оплаты
+    success_screen: paid   # какой экран показать после оплаты
+  pro:
+    title: "Курс «Контент как искусство» — PRO"
+    price: 19900
+    grant: [student_basic, student_pro]
+    success_screen: paid
+
+# ------------------------------------------------------------
+#  ЭКРАНЫ
+#  text        — текст (HTML: <b>, <i>, <a href="">). Подстановки: {first_name}
+#  photo       — необязательно: URL картинки или file_id
+#  on_enter    — что сделать при открытии: add / remove категорий
+#  if / else   — условие доступа к экрану и куда отправить, если не выполнено
+#  buttons     — список рядов; в ряду одна или несколько кнопок
+#     goto: экран | url: ссылка | pay: тариф
+#     if: условие показа кнопки
+#
+#  Условия:  any: [a, b]  — есть хотя бы одна категория
+#            all: [a, b]  — есть все
+#            not: [a, b]  — нет ни одной
+#  (можно комбинировать в одном if — должны выполниться все части)
+# ------------------------------------------------------------
+screens:
+
+  welcome:
+    text: |
+      Привет, {first_name}! 🍂
+
+      Это бот <b>осеннего курса по контенту «как искусство»</b>.
+      Здесь можно узнать про программу, выбрать тариф и получить доступ к материалам.
+    on_enter:
+      add: [lead]
+    buttons:
+      - - {text: "📖 О курсе", goto: about}
+      - - {text: "💳 Тарифы", goto: tariffs, if: {not: [student_basic]}}
+      - - {text: "🎓 Мои материалы", goto: materials, if: {any: [student_basic]}}
+      - - {text: "⭐ Перейти на PRO", goto: upgrade, if: {all: [student_basic], not: [student_pro]}}
+      - - {text: "💬 Задать вопрос", url: "https://t.me/your_username"}
+
+  about:
+    text: |
+      <b>О курсе</b>
+
+      • 6 недель, старт — 20 ноября
+      • уроки в записи + живые разборы
+      • домашние задания с обратной связью
+
+      Программа: …
+    buttons:
+      - - {text: "💳 Тарифы", goto: tariffs, if: {not: [student_basic]}}
+      - - {text: "⬅️ Назад", goto: welcome}
+
+  tariffs:
+    text: |
+      <b>Тарифы</b>
+
+      <b>Базовый — 9 900 ₽</b>
+      Все уроки + чат участников
+
+      <b>PRO — 19 900 ₽</b>
+      Всё из Базового + разбор ваших работ и 2 созвона
+    buttons:
+      - - {text: "Оплатить Базовый — 9 900 ₽", pay: basic}
+      - - {text: "Оплатить PRO — 19 900 ₽", pay: pro}
+      - - {text: "🕓 Хочу в следующий поток", goto: waitlist}
+      - - {text: "⬅️ Назад", goto: welcome}
+
+  waitlist:
+    text: "Записали вас в лист ожидания — напишем, когда откроем набор ✨"
+    on_enter:
+      add: [waitlist]
+    buttons:
+      - - {text: "⬅️ В начало", goto: welcome}
+
+  upgrade:
+    if: {all: [student_basic], not: [student_pro]}
+    else: welcome
+    text: |
+      Доплатите разницу и получите разборы работ и созвоны.
+    buttons:
+      - - {text: "Оплатить PRO", pay: pro}
+      - - {text: "⬅️ Назад", goto: welcome}
+
+  paid:
+    text: |
+      Оплата прошла, спасибо! 🎉
+      Доступ к материалам открыт.
+    buttons:
+      - - {text: "🎓 Мои материалы", goto: materials}
+
+  materials:
+    if: {any: [student_basic]}
+    else: tariffs
+    text: |
+      <b>Ваши материалы</b>
+
+      Урок 1 — …
+      Урок 2 — …
+    buttons:
+      - - {text: "👥 Чат участников", url: "https://t.me/+invite_link"}
+      - - {text: "🔒 PRO-разборы", url: "https://t.me/+pro_link", if: {any: [student_pro]}}
+      - - {text: "⬅️ В начало", goto: welcome}

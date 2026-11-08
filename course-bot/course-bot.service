@@ -1,0 +1,12 @@
+[Unit]
+Description=Telegram bot: course-bot
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/bulaavina_bots/course-bot
+ExecStart=/opt/bulaavina_bots/course-bot/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
