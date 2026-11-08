@@ -5,7 +5,7 @@ import time
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import (BotCommand, CallbackQuery, FSInputFile, InlineKeyboardButton,
+from aiogram.types import (BotCommand, BotCommandScopeChat, CallbackQuery, FSInputFile, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
 from . import prodamus
@@ -20,11 +20,24 @@ router = Router(name="user")
 _file_ids: dict[str, str] = {}
 
 
-async def set_commands(bot: Bot, sc: Scenario):
+ADMIN_COMMANDS = [
+    ("admin", "админка"), ("stats", "статистика"), ("broadcast", "рассылка"),
+    ("testpay", "тест оплаты на 10 ₽"),
+]
+
+
+async def set_commands(bot: Bot, sc: Scenario, admin_ids: set[int] = frozenset()):
     cmds = [BotCommand(command="start", description=sc.start_description)]
     cmds += [BotCommand(command=k, description=(v or {}).get("description") or k)
              for k, v in sc.commands.items()]
     await bot.set_my_commands(cmds)
+    # admins additionally see admin commands in their menu
+    admin_cmds = cmds + [BotCommand(command=c, description=d) for c, d in ADMIN_COMMANDS]
+    for aid in admin_ids:
+        try:
+            await bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(chat_id=aid))
+        except TelegramBadRequest:
+            log.warning("admin %s has not started the bot yet — menu not set", aid)
 
 
 async def _send_photo(bot: Bot, sc: Scenario, chat_id: int, photo: str, **kw):
@@ -100,7 +113,7 @@ async def cb_goto(cq: CallbackQuery, bot: Bot, db: DB, sc: Scenario):
 async def cb_pay(cq: CallbackQuery, bot: Bot, db: DB, sc: Scenario, cfg: Config):
     tid = cq.data[2:]
     tariff = sc.tariffs.get(tid)
-    if not tariff:
+    if not tariff or (tariff.get("admin_only") and cq.from_user.id not in cfg.admin_ids):
         await cq.answer("Тариф не найден", show_alert=True)
         return
     if not (cfg.prodamus_url and cfg.public_url):
@@ -108,7 +121,12 @@ async def cb_pay(cq: CallbackQuery, bot: Bot, db: DB, sc: Scenario, cfg: Config)
         log.error("PRODAMUS_URL / PUBLIC_URL are not set")
         return
 
-    u = cq.from_user
+    await cq.answer()
+    await send_payment_link(cq.message, cq.from_user, tid, bot, db, sc, cfg)
+
+
+async def send_payment_link(msg: Message, u, tid: str, bot: Bot, db: DB, sc: Scenario, cfg: Config):
+    tariff = sc.tariffs[tid]
     await db.upsert_user(u.id, u.username, u.first_name)
     order_id = f"{u.id}-{int(time.time())}-{secrets.token_hex(3)}"
     await db.create_payment(order_id, u.id, tid, float(tariff["price"]))
@@ -125,8 +143,7 @@ async def cb_pay(cq: CallbackQuery, bot: Bot, db: DB, sc: Scenario, cfg: Config)
         sign_link=cfg.prodamus_sign_links,
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Перейти к оплате", url=link)]])
-    await cq.answer()
-    await cq.message.answer(
+    await msg.answer(
         f"<b>{tariff['title']}</b>\nСумма: {tariff['price']} ₽\n\n"
         "Нажмите кнопку ниже. После оплаты бот пришлёт подтверждение автоматически.",
         reply_markup=kb)

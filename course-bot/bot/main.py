@@ -33,7 +33,7 @@ async def main():
 
     try:
         await bot.delete_webhook(drop_pending_updates=False)
-        await set_commands(bot, sc)
+        await set_commands(bot, sc, cfg.admin_ids)
         await dp.start_polling(bot)
     finally:
         await runner.cleanup()

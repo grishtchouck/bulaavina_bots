@@ -12,6 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (BufferedInputFile, CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
+from .config import Config
 from .db import DB
 from .scenario import Scenario, ScenarioError
 
@@ -27,6 +28,7 @@ HELP = """<b>Админка</b>
 /categories — список категорий
 /export — выгрузка пользователей в CSV
 /reload — перечитать scenario.yaml
+/testpay — тестовая оплата на 10 ₽ (проходит весь путь, как настоящая)
 /cancel — отменить текущее действие"""
 
 
@@ -117,7 +119,7 @@ def make_router(admin_ids: set[int]) -> Router:
         await msg.answer_document(BufferedInputFile(data, filename=f"users_{datetime.now():%Y%m%d}.csv"))
 
     @r.message(Command("reload"))
-    async def cmd_reload(msg: Message, bot: Bot, sc: Scenario):
+    async def cmd_reload(msg: Message, bot: Bot, sc: Scenario, cfg: Config):
         try:
             sc.load()
         except ScenarioError as e:
@@ -125,8 +127,21 @@ def make_router(admin_ids: set[int]) -> Router:
         except Exception as e:  # yaml syntax etc.
             return await msg.answer(f"❌ Не удалось прочитать файл:\n<pre>{e}</pre>")
         from .handlers_user import set_commands
-        await set_commands(bot, sc)
+        await set_commands(bot, sc, cfg.admin_ids)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
+
+    @r.message(Command("testpay"))
+    async def cmd_testpay(msg: Message, bot: Bot, db: DB, sc: Scenario, cfg: Config):
+        from .handlers_user import send_payment_link
+        tid = next((k for k, t in sc.tariffs.items() if t.get("admin_only")), None)
+        if not tid:
+            return await msg.answer("В scenario.yaml нет тарифа с admin_only: true")
+        if not (cfg.prodamus_url and cfg.public_url):
+            return await msg.answer("Не заполнены PRODAMUS_URL / PUBLIC_URL в .env")
+        await send_payment_link(msg, msg.from_user, tid, bot, db, sc, cfg)
+        await msg.answer("После оплаты должны прийти экран «спасибо» и уведомление «💰 Оплата». "
+                         "Тестовый платёж можно вернуть в кабинете Prodamus; "
+                         "категорию student снять: /revoke &lt;твой id&gt; student")
 
     # ---------------- broadcast ----------------
     def audience_kb(sc: Scenario) -> InlineKeyboardMarkup:

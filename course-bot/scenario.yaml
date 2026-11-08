@@ -31,6 +31,13 @@ tariffs:
     grant:
     - student
     success_screen: paid
+  test:
+    title: Тест оплаты
+    price: 10
+    grant:
+    - student
+    success_screen: paid
+    admin_only: true
 screens:
   welcome:
     photo: media/welcome.jpg
