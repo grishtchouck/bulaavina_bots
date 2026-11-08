@@ -1,8 +1,15 @@
 """Loads scenario.yaml and renders screens for a given user."""
 from dataclasses import dataclass, field
 
+import re
+from pathlib import Path
+
 import yaml
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+CAPTION_LIMIT = 1024   # подпись к картинке
+TEXT_LIMIT = 4096      # обычное сообщение
+_CMD_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 
 class ScenarioError(Exception):
@@ -35,7 +42,15 @@ class Rendered:
 class Scenario:
     def __init__(self, path: str):
         self.path = path
+        self.base_dir = Path(path).resolve().parent
         self.load()
+
+    def media_path(self, photo: str | None) -> Path | None:
+        """Local file for `photo`, or None if it is a URL / file_id."""
+        if not photo or photo.startswith(("http://", "https://")):
+            return None
+        p = (self.base_dir / photo).resolve()
+        return p if p.is_file() else None
 
     def load(self):
         with open(self.path, encoding="utf-8") as f:
@@ -45,6 +60,9 @@ class Scenario:
         self.deep_links: dict[str, list[str]] = data.get("deep_links") or {}
         self.tariffs: dict[str, dict] = data.get("tariffs") or {}
         self.screens: dict[str, dict] = data["screens"]
+        # commands: {buy: {screen: buy, description: "забрать курс"}}
+        self.commands: dict[str, dict] = data.get("commands") or {}
+        self.start_description: str = data.get("start_description") or "начало"
         self.validate()
 
     def validate(self):
@@ -70,7 +88,21 @@ class Scenario:
                 errors.append(f"tariffs.{tid}: экран «{t['success_screen']}» не найден")
             if len(f"p:{tid}".encode()) > 64:
                 errors.append(f"tariffs.{tid}: слишком длинный id")
+        for cmd, c in self.commands.items():
+            if not _CMD_RE.match(str(cmd)) or cmd == "start":
+                errors.append(f"commands.{cmd}: команда — латиница/цифры/_ , не start")
+            if (c or {}).get("screen") not in self.screens:
+                errors.append(f"commands.{cmd}: экран «{(c or {}).get('screen')}» не найден")
         for name, s in self.screens.items():
+            plain = re.sub(r"<[^>]+>", "", s.get("text") or "").strip()
+            limit = CAPTION_LIMIT if s.get("photo") else TEXT_LIMIT
+            if len(plain) > limit:
+                errors.append(f"screens.{name}: текст {len(plain)} символов, лимит {limit}"
+                              + (" (подпись к картинке)" if s.get("photo") else ""))
+            ph = s.get("photo")
+            if ph and not ph.startswith(("http://", "https://")) and "/" in ph \
+                    and not (self.base_dir / ph).is_file():
+                errors.append(f"screens.{name}: файл картинки «{ph}» не найден")
             if len(f"g:{name}".encode()) > 64:
                 errors.append(f"screens.{name}: слишком длинное имя")
             cond_ok(f"screens.{name}.if", s.get("if"))

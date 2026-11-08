@@ -117,13 +117,15 @@ def make_router(admin_ids: set[int]) -> Router:
         await msg.answer_document(BufferedInputFile(data, filename=f"users_{datetime.now():%Y%m%d}.csv"))
 
     @r.message(Command("reload"))
-    async def cmd_reload(msg: Message, sc: Scenario):
+    async def cmd_reload(msg: Message, bot: Bot, sc: Scenario):
         try:
             sc.load()
         except ScenarioError as e:
             return await msg.answer(f"❌ Ошибки в сценарии, оставил старую версию:\n<pre>{e}</pre>")
         except Exception as e:  # yaml syntax etc.
             return await msg.answer(f"❌ Не удалось прочитать файл:\n<pre>{e}</pre>")
+        from .handlers_user import set_commands
+        await set_commands(bot, sc)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
 
     # ---------------- broadcast ----------------

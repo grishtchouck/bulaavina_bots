@@ -5,7 +5,8 @@ import time
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (BotCommand, CallbackQuery, FSInputFile, InlineKeyboardButton,
+                           InlineKeyboardMarkup, Message)
 
 from . import prodamus
 from .config import Config
@@ -14,6 +15,31 @@ from .scenario import Rendered, Scenario
 
 log = logging.getLogger(__name__)
 router = Router(name="user")
+
+# local file path → Telegram file_id (after the first upload we resend by id, it's instant)
+_file_ids: dict[str, str] = {}
+
+
+async def set_commands(bot: Bot, sc: Scenario):
+    cmds = [BotCommand(command="start", description=sc.start_description)]
+    cmds += [BotCommand(command=k, description=(v or {}).get("description") or k)
+             for k, v in sc.commands.items()]
+    await bot.set_my_commands(cmds)
+
+
+async def _send_photo(bot: Bot, sc: Scenario, chat_id: int, photo: str, **kw):
+    local = sc.media_path(photo)
+    if not local:
+        return await bot.send_photo(chat_id, photo, **kw)
+    key = str(local)
+    if key in _file_ids:
+        try:
+            return await bot.send_photo(chat_id, _file_ids[key], **kw)
+        except TelegramBadRequest:
+            _file_ids.pop(key, None)
+    msg = await bot.send_photo(chat_id, FSInputFile(local), **kw)
+    _file_ids[key] = msg.photo[-1].file_id
+    return msg
 
 
 async def show(bot: Bot, db: DB, sc: Scenario, chat_id: int, user_id: int, first_name: str,
@@ -34,7 +60,7 @@ async def show(bot: Bot, db: DB, sc: Scenario, chat_id: int, user_id: int, first
             if "not modified" in str(e):
                 return
     if r.photo:
-        await bot.send_photo(chat_id, r.photo, caption=r.text, reply_markup=r.keyboard)
+        await _send_photo(bot, sc, chat_id, r.photo, caption=r.text, reply_markup=r.keyboard)
     else:
         await bot.send_message(chat_id, r.text, reply_markup=r.keyboard, disable_web_page_preview=True)
 
@@ -47,6 +73,16 @@ async def cmd_start(msg: Message, command: CommandObject, bot: Bot, db: DB, sc: 
     if param and param in sc.deep_links:
         await db.add_categories(u.id, sc.deep_links[param])
     await show(bot, db, sc, msg.chat.id, u.id, u.first_name, sc.start_screen)
+
+
+@router.message(F.text.regexp(r"^/([a-z0-9_]+)(@\w+)?$").as_("m"))
+async def cmd_scenario(msg: Message, m, bot: Bot, db: DB, sc: Scenario):
+    cmd = sc.commands.get(m.group(1))
+    if not cmd:
+        return await fallback(msg, bot, db, sc)
+    u = msg.from_user
+    await db.upsert_user(u.id, u.username, u.first_name)
+    await show(bot, db, sc, msg.chat.id, u.id, u.first_name, cmd["screen"])
 
 
 @router.callback_query(F.data.startswith("g:"))

@@ -9,7 +9,7 @@ from aiohttp import web
 from . import config
 from .db import DB
 from .handlers_admin import make_router
-from .handlers_user import router as user_router
+from .handlers_user import router as user_router, set_commands
 from .scenario import Scenario
 from .webhook import make_app
 
@@ -33,6 +33,7 @@ async def main():
 
     try:
         await bot.delete_webhook(drop_pending_updates=False)
+        await set_commands(bot, sc)
         await dp.start_polling(bot)
     finally:
         await runner.cleanup()
