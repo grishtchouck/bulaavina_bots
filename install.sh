@@ -91,10 +91,15 @@ ok "Сервис $BOT зарегистрирован"
 CADDY=/etc/caddy/Caddyfile
 # убираем дефолтный конфиг Caddy, если он ещё стоит
 if grep -q '^:80' "$CADDY" 2>/dev/null; then : > "$CADDY"; fi
-if ! grep -q "^$DOMAIN " "$CADDY" 2>/dev/null; then
-  echo "$DOMAIN { reverse_proxy 127.0.0.1:$PORT }" >> "$CADDY"
+# убираем однострочную запись старых версий скрипта (Caddy её не принимает)
+sed -i "\\#^$DOMAIN {.*}\$#d" "$CADDY" 2>/dev/null || true
+if ! grep -q "^$DOMAIN {" "$CADDY" 2>/dev/null; then
+  printf '%s {\n\treverse_proxy 127.0.0.1:%s\n}\n\n' "$DOMAIN" "$PORT" >> "$CADDY"
 fi
-systemctl reload caddy || systemctl restart caddy
+caddy validate --config "$CADDY" --adapter caddyfile >/dev/null 2>&1 \
+  || die "Ошибка в $CADDY:
+$(caddy validate --config "$CADDY" --adapter caddyfile 2>&1 | tail -3)"
+systemctl reload caddy 2>/dev/null || systemctl restart caddy
 ok "Caddy: https://$DOMAIN → 127.0.0.1:$PORT"
 
 SERVER_IP=$(curl -4 -m 5 -s https://ifconfig.me || echo "?")
