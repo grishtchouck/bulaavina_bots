@@ -63,6 +63,11 @@ class Scenario:
         # commands: {buy: {screen: buy, description: "забрать курс"}}
         self.commands: dict[str, dict] = data.get("commands") or {}
         self.start_description: str = data.get("start_description") or "начало"
+        # ответ человеку, когда он пишет боту сообщение (вопрос уходит в поддержку)
+        self.question_reply: str = data.get("question_reply") or \
+            "спасибо! передали твой вопрос, скоро ответим здесь 🤍"
+        # напоминание тем, кто нажал «перейти к оплате», но не оплатил
+        self.reminder: dict | None = data.get("reminder")
         self.validate()
 
     def validate(self):
@@ -90,6 +95,11 @@ class Scenario:
                 errors.append(f"tariffs.{tid}: paid_content длиннее 4096 символов")
             if len(f"p:{tid}".encode()) > 64:
                 errors.append(f"tariffs.{tid}: слишком длинный id")
+        if self.reminder:
+            if self.reminder.get("screen") not in self.screens:
+                errors.append(f"reminder: экран «{self.reminder.get('screen')}» не найден")
+            if not isinstance(self.reminder.get("after_minutes"), int) or self.reminder["after_minutes"] < 10:
+                errors.append("reminder.after_minutes: целое число минут, не меньше 10")
         for cmd, c in self.commands.items():
             if not _CMD_RE.match(str(cmd)) or cmd == "start":
                 errors.append(f"commands.{cmd}: команда — латиница/цифры/_ , не start")

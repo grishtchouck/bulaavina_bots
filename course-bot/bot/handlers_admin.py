@@ -1,5 +1,7 @@
 import asyncio
 import html
+import re
+import time
 import csv
 import io
 import logging
@@ -31,6 +33,9 @@ HELP = """<b>Админка</b>
 /reload — перечитать scenario.yaml
 /testpay — тестовая оплата на 10 ₽ (проходит весь путь, как настоящая)
 /success — прислать себе экран, который покупатель видит после оплаты
+/funnel — воронка за 7 дней (/funnel 30 — за 30, /funnel 0 — за всё время)
+
+Вопросы: всё, что люди пишут боту, приходит сюда. Ответь на сообщение (свайп → «Ответить»), и ответ уйдёт человеку.
 /cancel — отменить текущее действие"""
 
 
@@ -131,6 +136,41 @@ def make_router(admin_ids: set[int]) -> Router:
         from .handlers_user import set_commands
         await set_commands(bot, sc, cfg.admin_ids)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
+
+    @r.message(Command("funnel"))
+    async def cmd_funnel(msg: Message, command: CommandObject, db: DB, sc: Scenario, cfg: Config):
+        arg = (command.args or "7").strip()
+        if not arg.isdigit():
+            return await msg.answer("Формат: /funnel 7 (дней), /funnel 0 — за всё время")
+        days = int(arg)
+        since = int(time.time()) - days * 86400 if days else 0
+        success = {t.get("success_screen") for t in sc.tariffs.values()}
+        screens = [sc.start_screen] + [n for n in sc.screens if n != sc.start_screen
+                                       and n not in success and n != (sc.reminder or {}).get("screen")]
+        steps = screens + ["pay_click", "paid"]
+        counts = await db.funnel(steps, since, sorted(cfg.admin_ids))
+
+        def label(step):
+            if step == "pay_click":
+                return "нажали «перейти к оплате»"
+            if step == "paid":
+                return "оплатили"
+            first = next((l for l in re.sub(r"<[^>]+>", "", sc.screens[step].get("text") or "").splitlines()
+                          if l.strip()), step)
+            return html.escape(html.unescape(first.strip())[:32])
+
+        base = counts[sc.start_screen] or 0
+        lines = [f"<b>Воронка {'за ' + str(days) + ' дн.' if days else 'за всё время'}</b>",
+                 "<i>уникальные люди, без админов</i>", ""]
+        for st in steps:
+            n = counts[st]
+            pct = f"{n * 100 / base:.0f}%" if base else "—"
+            lines.append(f"{n:>5}  {pct:>4}  {label(st)}  <code>{st}</code>")
+        q = await db.funnel(["question", "reminder_sent"], since, sorted(cfg.admin_ids))
+        lines += ["", f"Задали вопрос: {q['question']}"]
+        if sc.reminder:
+            lines.append(f"Получили напоминание: {q['reminder_sent']}")
+        await msg.answer("\n".join(lines))
 
     @r.message(Command("success"))
     async def cmd_success(msg: Message, bot: Bot, db: DB, sc: Scenario):

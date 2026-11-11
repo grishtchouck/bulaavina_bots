@@ -25,6 +25,7 @@ class Config:
     public_url: str            # https://bot.example.com — адрес, по которому доступен сервер
     web_host: str
     web_port: int
+    support_chat_id: int | None = None  # куда пересылать вопросы; пусто → админам в личку
 
 
 def load() -> Config:
@@ -39,4 +40,5 @@ def load() -> Config:
         public_url=os.getenv("PUBLIC_URL", "").rstrip("/"),
         web_host=os.getenv("WEB_HOST", "0.0.0.0"),
         web_port=int(os.getenv("WEB_PORT", "8080")),
+        support_chat_id=int(os.getenv("SUPPORT_CHAT_ID")) if os.getenv("SUPPORT_CHAT_ID") else None,
     )

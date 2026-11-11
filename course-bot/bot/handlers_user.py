@@ -1,3 +1,4 @@
+import html
 import logging
 import secrets
 import time
@@ -15,6 +16,7 @@ from .scenario import Rendered, Scenario
 
 log = logging.getLogger(__name__)
 router = Router(name="user")
+router.message.filter(F.chat.type == "private")
 
 # local file path → Telegram file_id (after the first upload we resend by id, it's instant)
 _file_ids: dict[str, str] = {}
@@ -22,7 +24,7 @@ _file_ids: dict[str, str] = {}
 
 ADMIN_COMMANDS = [
     ("admin", "админка"), ("stats", "статистика"), ("broadcast", "рассылка"),
-    ("testpay", "тест оплаты на 10 ₽"), ("success", "экран после оплаты"),
+    ("testpay", "тест оплаты на 10 ₽"), ("success", "экран после оплаты"), ("funnel", "воронка"),
 ]
 
 
@@ -59,6 +61,7 @@ async def show(bot: Bot, db: DB, sc: Scenario, chat_id: int, user_id: int, first
                screen: str, edit: Message | None = None):
     cats = await db.categories(user_id)
     r: Rendered = sc.render(screen, cats, first_name)
+    await db.log_event(user_id, r.name)  # for /funnel
     if r.add:
         await db.add_categories(user_id, r.add)
     if r.remove:
@@ -128,6 +131,7 @@ async def cb_pay(cq: CallbackQuery, bot: Bot, db: DB, sc: Scenario, cfg: Config)
 async def send_payment_link(msg: Message, u, tid: str, bot: Bot, db: DB, sc: Scenario, cfg: Config):
     tariff = sc.tariffs[tid]
     await db.upsert_user(u.id, u.username, u.first_name)
+    await db.log_event(u.id, "pay_click")
     order_id = f"{u.id}-{int(time.time())}-{secrets.token_hex(3)}"
     await db.create_payment(order_id, u.id, tid, float(tariff["price"]))
     me = await bot.me()
@@ -151,9 +155,47 @@ async def send_payment_link(msg: Message, u, tid: str, bot: Bot, db: DB, sc: Sce
         reply_markup=kb)
 
 
-@router.message()
-async def fallback(msg: Message, bot: Bot, db: DB, sc: Scenario):
-    """Any other text from a user → show the start screen."""
+@router.message(F.text.startswith("/"))
+async def unknown_command(msg: Message, bot: Bot, db: DB, sc: Scenario):
+    """Unknown /command → start screen."""
     u = msg.from_user
     await db.upsert_user(u.id, u.username, u.first_name)
     await show(bot, db, sc, msg.chat.id, u.id, u.first_name, sc.start_screen)
+
+
+async def fallback(msg: Message, bot: Bot, db: DB, sc: Scenario):
+    # kept for cmd_scenario (unknown /command); same as unknown_command
+    await unknown_command(msg, bot, db, sc)
+
+
+@router.message()
+async def question(msg: Message, bot: Bot, db: DB, sc: Scenario, cfg: Config):
+    """Any text/photo/voice from a user is a question: forward it to support, confirm to the user."""
+    u = msg.from_user
+    if u.id in cfg.admin_ids:  # admins writing to the bot are not customers' questions
+        return await unknown_command(msg, bot, db, sc)
+    await db.upsert_user(u.id, u.username, u.first_name)
+    await db.log_event(u.id, "question")
+    cats = await db.categories(u.id)
+    buyer_cats = {c for t in sc.tariffs.values() if not t.get("admin_only") for c in t.get("grant", [])}
+    who = f'<a href="tg://user?id={u.id}">{html.escape(u.first_name or "без имени")}</a>'
+    if u.username:
+        who += f" (@{html.escape(u.username)})"
+    status = "уже купил(а) курс ✅" if cats & buyer_cats else "ещё не купил(а)"
+    header = (f"✉️ <b>Вопрос</b> от {who}\nID: <code>{u.id}</code> · {status}\n"
+              "<i>Ответь на это сообщение (свайп влево → «Ответить»), и ответ уйдёт человеку от имени бота.</i>")
+    targets = [cfg.support_chat_id] if cfg.support_chat_id else sorted(cfg.admin_ids)
+    delivered = False
+    for chat in targets:
+        try:
+            h = await bot.send_message(chat, header, disable_web_page_preview=True)
+            c = await bot.copy_message(chat, msg.chat.id, msg.message_id, reply_to_message_id=h.message_id)
+            await db.save_thread(chat, h.message_id, u.id)
+            await db.save_thread(chat, c.message_id, u.id)
+            delivered = True
+        except Exception:
+            log.exception("could not forward question to %s", chat)
+    if delivered:
+        await msg.answer(sc.question_reply)
+    else:
+        await show(bot, db, sc, msg.chat.id, u.id, u.first_name, sc.start_screen)

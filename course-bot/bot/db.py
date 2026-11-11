@@ -29,6 +29,19 @@ CREATE TABLE IF NOT EXISTS payments (
     raw         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cat ON user_categories(category);
+CREATE TABLE IF NOT EXISTS events (
+    user_id  INTEGER NOT NULL,
+    name     TEXT NOT NULL,
+    ts       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events ON events(name, ts);
+CREATE TABLE IF NOT EXISTS question_threads (
+    chat_id     INTEGER NOT NULL,   -- where the question was forwarded (admin or support chat)
+    message_id  INTEGER NOT NULL,   -- forwarded message id
+    user_id     INTEGER NOT NULL,   -- who asked
+    ts          INTEGER NOT NULL,
+    PRIMARY KEY (chat_id, message_id)
+);
 """
 
 
@@ -41,6 +54,11 @@ class DB:
         self.conn = await aiosqlite.connect(self.path)
         self.conn.row_factory = aiosqlite.Row
         await self.conn.executescript(SCHEMA)
+        # migrations for databases created by older versions
+        cur = await self.conn.execute("PRAGMA table_info(payments)")
+        cols = {r["name"] for r in await cur.fetchall()}
+        if "reminded_at" not in cols:
+            await self.conn.execute("ALTER TABLE payments ADD COLUMN reminded_at INTEGER")
         await self.conn.commit()
 
     async def close(self):
@@ -131,6 +149,59 @@ class DB:
             (int(time.time()), raw, order_id))
         await self.conn.commit()
         return cur.rowcount > 0
+
+    # ---------- funnel events ----------
+    async def log_event(self, uid: int, name: str):
+        await self.conn.execute("INSERT INTO events (user_id, name, ts) VALUES (?,?,?)",
+                                (uid, name, int(time.time())))
+        await self.conn.commit()
+
+    async def funnel(self, steps: list[str], since: int, exclude_users=()) -> dict[str, int]:
+        """Unique users per event name since `since` (users who came in the period)."""
+        ex = f" AND user_id NOT IN ({','.join('?' * len(exclude_users))})" if exclude_users else ""
+        res = {}
+        for name in steps:
+            cur = await self.conn.execute(
+                f"SELECT COUNT(DISTINCT user_id) FROM events WHERE name=? AND ts>=?{ex}",
+                [name, since, *exclude_users])
+            res[name] = (await cur.fetchone())[0]
+        return res
+
+    # ---------- questions ----------
+    async def save_thread(self, chat_id: int, message_id: int, user_id: int):
+        await self.conn.execute(
+            "INSERT OR REPLACE INTO question_threads (chat_id, message_id, user_id, ts) VALUES (?,?,?,?)",
+            (chat_id, message_id, user_id, int(time.time())))
+        await self.conn.commit()
+
+    async def thread_user(self, chat_id: int, message_id: int) -> int | None:
+        cur = await self.conn.execute(
+            "SELECT user_id FROM question_threads WHERE chat_id=? AND message_id=?", (chat_id, message_id))
+        row = await cur.fetchone()
+        return row["user_id"] if row else None
+
+    # ---------- abandoned payments ----------
+    async def due_reminders(self, older_than: int, buyer_categories, skip_tariffs=()) -> list[int]:
+        """Users with an unpaid order created before `older_than`, never reminded,
+        not blocked, and not already buyers."""
+        cats = list(buyer_categories) or ["__none__"]
+        skip = list(skip_tariffs) or ["__none__"]
+        cur = await self.conn.execute(f"""
+            SELECT DISTINCT p.user_id FROM payments p JOIN users u ON u.id = p.user_id
+            WHERE p.status='pending' AND p.created_at < ? AND u.blocked = 0
+              AND p.tariff NOT IN ({','.join('?' * len(skip))})
+              AND NOT EXISTS (SELECT 1 FROM payments r WHERE r.user_id = p.user_id AND r.reminded_at IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM payments q WHERE q.user_id = p.user_id AND q.status = 'paid'
+                              AND q.tariff NOT IN ({','.join('?' * len(skip))}))
+              AND NOT EXISTS (SELECT 1 FROM user_categories c WHERE c.user_id = p.user_id
+                              AND c.category IN ({','.join('?' * len(cats))}))""",
+            [older_than, *skip, *skip, *cats])
+        return [r["user_id"] for r in await cur.fetchall()]
+
+    async def mark_reminded(self, uid: int):
+        await self.conn.execute("UPDATE payments SET reminded_at=? WHERE user_id=? AND status='pending'",
+                                (int(time.time()), uid))
+        await self.conn.commit()
 
     async def paid_summary(self, since: int = 0, exclude_tariffs=()) -> tuple[int, float]:
         sql = "SELECT COUNT(*), COALESCE(SUM(amount),0) FROM payments WHERE status='paid' AND paid_at>=?"

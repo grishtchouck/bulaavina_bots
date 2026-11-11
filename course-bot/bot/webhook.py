@@ -51,6 +51,8 @@ def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
         uid, tariff_id = order["user_id"], order["tariff"]
         tariff = sc.tariffs.get(tariff_id, {})
         await db.add_categories(uid, tariff.get("grant", []))
+        if not tariff.get("admin_only"):
+            await db.log_event(uid, "paid")
         user = await db.get_user(uid)
         try:
             await show(bot, db, sc, uid, uid, user["first_name"] if user else "",

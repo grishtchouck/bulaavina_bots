@@ -12,6 +12,7 @@
 
 start_screen: welcome
 start_description: узнать подробности про курс
+question_reply: спасибо! передали твой вопрос, скоро ответим здесь 🤍
 commands:
   buy:
     screen: buy
