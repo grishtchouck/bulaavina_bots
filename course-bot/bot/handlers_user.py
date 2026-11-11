@@ -44,7 +44,7 @@ async def _send_photo(bot: Bot, sc: Scenario, chat_id: int, photo: str, **kw):
     local = sc.media_path(photo)
     if not local:
         return await bot.send_photo(chat_id, photo, **kw)
-    key = str(local)
+    key = f"{local}:{local.stat().st_mtime_ns}"  # new file contents → new upload
     if key in _file_ids:
         try:
             return await bot.send_photo(chat_id, _file_ids[key], **kw)
