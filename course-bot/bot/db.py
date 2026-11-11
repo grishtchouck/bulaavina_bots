@@ -132,6 +132,16 @@ class DB:
         await self.conn.commit()
         return cur.rowcount > 0
 
+    async def paid_summary(self, since: int = 0, exclude_tariffs=()) -> tuple[int, float]:
+        sql = "SELECT COUNT(*), COALESCE(SUM(amount),0) FROM payments WHERE status='paid' AND paid_at>=?"
+        args = [since]
+        if exclude_tariffs:
+            sql += f" AND tariff NOT IN ({','.join('?' * len(exclude_tariffs))})"
+            args += list(exclude_tariffs)
+        cur = await self.conn.execute(sql, args)
+        n, total = await cur.fetchone()
+        return n, total
+
     # ---------- stats / export ----------
     async def stats(self) -> dict:
         async def one(sql, *a):
