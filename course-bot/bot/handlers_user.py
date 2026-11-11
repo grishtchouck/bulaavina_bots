@@ -22,7 +22,7 @@ _file_ids: dict[str, str] = {}
 
 ADMIN_COMMANDS = [
     ("admin", "админка"), ("stats", "статистика"), ("broadcast", "рассылка"),
-    ("testpay", "тест оплаты на 10 ₽"),
+    ("testpay", "тест оплаты на 10 ₽"), ("success", "экран после оплаты"),
 ]
 
 

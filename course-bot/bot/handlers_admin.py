@@ -30,6 +30,7 @@ HELP = """<b>Админка</b>
 /export — выгрузка пользователей в CSV
 /reload — перечитать scenario.yaml
 /testpay — тестовая оплата на 10 ₽ (проходит весь путь, как настоящая)
+/success — прислать себе экран, который покупатель видит после оплаты
 /cancel — отменить текущее действие"""
 
 
@@ -130,6 +131,17 @@ def make_router(admin_ids: set[int]) -> Router:
         from .handlers_user import set_commands
         await set_commands(bot, sc, cfg.admin_ids)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
+
+    @r.message(Command("success"))
+    async def cmd_success(msg: Message, bot: Bot, db: DB, sc: Scenario):
+        from .handlers_user import show
+        screens = {t.get("success_screen") for t in sc.tariffs.values() if not t.get("admin_only")}
+        screens.discard(None)
+        if not screens:
+            return await msg.answer("В тарифах не указан success_screen")
+        for name in sorted(screens):
+            await msg.answer(f"👇 Экран после оплаты (<code>{name}</code>), так его видит покупатель:")
+            await show(bot, db, sc, msg.chat.id, msg.from_user.id, msg.from_user.first_name, name)
 
     @r.message(Command("testpay"))
     async def cmd_testpay(msg: Message, bot: Bot, db: DB, sc: Scenario, cfg: Config):
