@@ -11,11 +11,11 @@
 # ============================================================
 
 start_screen: welcome
-start_description: начало
+start_description: узнать подробности про курс
 commands:
   buy:
     screen: buy
-    description: забрать курс
+    description: приобрести
 categories:
   lead: Зашёл в бота
   student: Купил курс
@@ -71,7 +71,7 @@ screens:
         goto: contents
     - - text: отзывы
         goto: reviews
-    - - text: забрать весь курс
+    - - text: приобрести
         goto: buy
   contents:
     photo: media/contents.jpg
@@ -95,7 +95,7 @@ screens:
     - - text: подробнее про модули
         goto: module1
     - &id001
-      - text: забрать курс
+      - text: приобрести
         goto: buy
   module1:
     photo: media/module1.jpg
