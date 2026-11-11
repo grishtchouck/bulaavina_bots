@@ -96,7 +96,10 @@ class Scenario:
             if (c or {}).get("screen") not in self.screens:
                 errors.append(f"commands.{cmd}: экран «{(c or {}).get('screen')}» не найден")
         for name, s in self.screens.items():
-            plain = re.sub(r"<[^>]+>", "", s.get("text") or "").strip()
+            raw = s.get("text") or ""
+            if re.search(r"&(?!(amp|lt|gt|quot|#\d+);)", raw):
+                errors.append(f"screens.{name}: символ & нужно писать как &amp;")
+            plain = re.sub(r"<[^>]+>", "", raw).strip()
             limit = CAPTION_LIMIT if s.get("photo") else TEXT_LIMIT
             if len(plain) > limit:
                 errors.append(f"screens.{name}: текст {len(plain)} символов, лимит {limit}"

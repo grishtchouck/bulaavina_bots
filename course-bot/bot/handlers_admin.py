@@ -1,4 +1,5 @@
 import asyncio
+import html
 import csv
 import io
 import logging
@@ -123,9 +124,9 @@ def make_router(admin_ids: set[int]) -> Router:
         try:
             sc.load()
         except ScenarioError as e:
-            return await msg.answer(f"❌ Ошибки в сценарии, оставил старую версию:\n<pre>{e}</pre>")
+            return await msg.answer(f"❌ Ошибки в сценарии, оставил старую версию:\n<pre>{html.escape(str(e))}</pre>")
         except Exception as e:  # yaml syntax etc.
-            return await msg.answer(f"❌ Не удалось прочитать файл:\n<pre>{e}</pre>")
+            return await msg.answer(f"❌ Не удалось прочитать файл:\n<pre>{html.escape(str(e))}</pre>")
         from .handlers_user import set_commands
         await set_commands(bot, sc, cfg.admin_ids)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
