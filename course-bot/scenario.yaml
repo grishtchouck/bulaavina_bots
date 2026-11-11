@@ -18,7 +18,7 @@ commands:
     description: приобрести
 categories:
   lead: Зашёл в бота
-  student: Купил курс
+  student: Купили
   src_insta: Пришёл из Instagram (ссылка ?start=insta)
   src_tg: Пришёл из Telegram-канала (ссылка ?start=tg)
 deep_links:
