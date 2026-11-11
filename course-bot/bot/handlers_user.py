@@ -144,8 +144,9 @@ async def send_payment_link(msg: Message, u, tid: str, bot: Bot, db: DB, sc: Sce
         paid_content=tariff.get("paid_content", ""),
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Перейти к оплате", url=link)]])
+    price_str = f"{tariff['price']:,}".replace(",", " ")
     await msg.answer(
-        f"<b>{tariff.get('label') or tariff['title']}</b>\nСумма: {tariff['price']} ₽\n\n"
+        f"<b>{tariff.get('label') or tariff['title']}</b>\nСумма: {price_str} ₽\n\n"
         "Нажмите кнопку ниже. После оплаты бот пришлёт подтверждение автоматически.",
         reply_markup=kb)
 

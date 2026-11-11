@@ -58,7 +58,7 @@ def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
         for admin in cfg.admin_ids:
             try:
                 await bot.send_message(admin, f"💰 Оплата: {name} — {tariff.get('label') or tariff.get('title', tariff_id)}, "
-                                              f"{order['amount']:.0f} ₽")
+                                              f"{order['amount']:,.0f} ₽".replace(",", " "))
             except Exception:
                 pass
 
