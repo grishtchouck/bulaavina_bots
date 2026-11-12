@@ -5,7 +5,9 @@ import time
 import csv
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+MSK = timezone(timedelta(hours=3))
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
@@ -33,6 +35,8 @@ HELP = """<b>Админка</b>
 /reload — перечитать scenario.yaml
 /testpay — тестовая оплата на 10 ₽ (проходит весь путь, как настоящая)
 /success — прислать себе экран, который покупатель видит после оплаты
+/paid &lt;номер заказа&gt; — провести оплату вручную, если уведомление от Prodamus не дошло (выдаёт доступ, шлёт «спасибо», учитывает в статистике)
+/pending — последние неоплаченные заказы
 /funnel — воронка за 7 дней (/funnel 30 — за 30, /funnel 0 — за всё время)
 
 Вопросы: всё, что люди пишут боту, приходит сюда. Ответь на сообщение (свайп → «Ответить»), и ответ уйдёт человеку.
@@ -136,6 +140,36 @@ def make_router(admin_ids: set[int]) -> Router:
         from .handlers_user import set_commands
         await set_commands(bot, sc, cfg.admin_ids)
         await msg.answer(f"✅ Сценарий перечитан: {len(sc.screens)} экранов, {len(sc.tariffs)} тарифов.")
+
+    @r.message(Command("paid"))
+    async def cmd_paid(msg: Message, command: CommandObject):
+        from .webhook import mark_paid_manually
+        order_id = (command.args or "").strip()
+        if not order_id:
+            return await msg.answer("Формат: /paid 323924747-1794416495-e7c6c5\n"
+                                    "Номер заказа — в кабинете Prodamus или в /pending")
+        res = await mark_paid_manually(order_id)
+        await msg.answer({"ok": "✅ Оплата проведена: покупатель получил доступ и «спасибо».",
+                          "already": "Этот заказ уже отмечен оплаченным.",
+                          "not_found": "Такого заказа нет в базе бота. Проверь номер в /pending."}[res])
+
+    @r.message(Command("pending"))
+    async def cmd_pending(msg: Message, db: DB, sc: Scenario):
+        cur = await db.conn.execute("""
+            SELECT p.order_id, p.amount, p.tariff, p.created_at, u.first_name, u.username
+            FROM payments p LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.status = 'pending' ORDER BY p.created_at DESC LIMIT 15""")
+        rows = await cur.fetchall()
+        if not rows:
+            return await msg.answer("Неоплаченных заказов нет.")
+        lines = ["<b>Неоплаченные заказы</b> (нажали «перейти к оплате»)", ""]
+        for r_ in rows:
+            when = datetime.fromtimestamp(r_["created_at"], MSK).strftime("%d.%m %H:%M")
+            who = html.escape(r_["first_name"] or "") + (f" @{html.escape(r_['username'])}" if r_["username"] else "")
+            lines.append(f"{when} · {who} · {r_['amount']:,.0f} ₽".replace(",", " ")
+                         + f"\n<code>{html.escape(r_['order_id'])}</code>")
+        lines += ["", "Если заказ оплачен в Prodamus, но бот не узнал: /paid &lt;номер&gt;"]
+        await msg.answer("\n".join(lines))
 
     @r.message(Command("funnel"))
     async def cmd_funnel(msg: Message, command: CommandObject, db: DB, sc: Scenario, cfg: Config):

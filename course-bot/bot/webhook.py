@@ -17,11 +17,21 @@ from .scenario import Scenario
 log = logging.getLogger(__name__)
 
 
+# set by make_app(); used by the admin /paid command to process a missed payment by hand
+_mark_paid_manually = None
+
+
+async def mark_paid_manually(order_id: str) -> str:
+    return await _mark_paid_manually(order_id)
+
+
 def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
     async def prodamus_webhook(request: web.Request):
         form = await request.post()
         flat = {k: v for k, v in form.items() if isinstance(v, str)}
         data = prodamus.unflatten(flat)
+        log.info("Prodamus: notification order_num=%s status=%s",
+                 data.get("order_num"), data.get("payment_status"))
 
         if not prodamus.verify(data, cfg.prodamus_secret, request.headers.get("Sign", "")):
             log.warning("Prodamus: bad signature, payload=%s", flat)
@@ -44,10 +54,24 @@ def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
 
         first_time = await db.mark_paid(order["order_id"], json.dumps(data, ensure_ascii=False))
         if first_time:
+            log.info("Prodamus: order %s paid", order["order_id"])
             await on_paid(order)
         return web.Response(text="success")
 
-    async def on_paid(order):
+    async def manual(order_id: str) -> str:
+        order = await db.get_payment(order_id)
+        if not order:
+            return "not_found"
+        if not await db.mark_paid(order_id, json.dumps({"manual": True})):
+            return "already"
+        log.info("order %s marked paid manually", order_id)
+        await on_paid(order, manual=True)
+        return "ok"
+
+    global _mark_paid_manually
+    _mark_paid_manually = manual
+
+    async def on_paid(order, manual: bool = False):
         uid, tariff_id = order["user_id"], order["tariff"]
         tariff = sc.tariffs.get(tariff_id, {})
         await db.add_categories(uid, tariff.get("grant", []))
@@ -60,6 +84,8 @@ def make_app(bot: Bot, db: DB, sc: Scenario, cfg: Config) -> web.Application:
         except Exception:
             log.exception("could not notify user %s about payment", uid)
         text = await payment_notice(order, tariff, user)
+        if manual:
+            text += "\n\n✋ <i>проведено вручную командой /paid</i>"
         for admin in cfg.admin_ids:
             try:
                 await bot.send_message(admin, text, disable_web_page_preview=True)
